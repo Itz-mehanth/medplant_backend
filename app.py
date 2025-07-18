@@ -241,12 +241,11 @@ def initialize_models():
         # Load ML models
         logger.info("Loading ML models...")
         model_paths = {
-            'leaf_model': 'models/LEAF_model.h5',
-            'eff_leaf_model': 'models/LEAF_model_eff.h5',
-            'mob_leaf_model': 'models/LEAF_model_mobilenet.h5',
-            'fruit_model': 'models/FRUIT_model.h5',
-            'eff_fruit_model': 'models/FRUIT_model_eff.h5',
-            'mob_fruit_model': 'models/FRUIT_model_mobilenet.h5'
+            'leaf_model': 'models/LEAF model.h5',
+            'eff_leaf_model': 'models/LEAF model(eff).h5',
+            'mob_leaf_model': 'models/LEAF model(mobilenet).h5',
+            'eff_fruit_model': 'models/FRUIT model(eff).h5',
+            'mob_fruit_model': 'models/FRUIT model(mobilenet).h5'
         }
         
         # Load models concurrently
@@ -557,4 +556,4 @@ logger.info("Application initialization completed")
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port, debug=True)
