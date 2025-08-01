@@ -19,7 +19,8 @@ logger = logging.getLogger(__name__)
 
 # Initialize Flask app
 app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": ["http://localhost:3000", "https://medicinal-plant-82aa9.web.app"]}})
+# CORS(app) # Allow all origins for local development
+CORS(app, resources={r"/predict": {"origins": "https://medicinal-plant-82aa9.web.app"}})
 
 # Global variables
 models = {}
@@ -64,11 +65,9 @@ def initialize_models():
             'mob_leaf_model': 'models/LEAF model(mobilenet).h5'
         }
         
-        # Load models sequentially to avoid memory issues
         for model_name, model_path in model_paths.items():
             models[model_name] = load_model_safe(model_path, model_name)
         
-        # Log loaded models
         loaded_models = [name for name, model in models.items() if model is not None]
         logger.info(f"Loaded models: {loaded_models}")
         
@@ -97,7 +96,6 @@ def preprocess_image_for_model(image_path, preprocess_func):
         if image is None:
             raise ValueError("Failed to load image")
 
-        # Resize and preprocess
         image = cv2.resize(image, (224, 224))
         image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         image = preprocess_func(image)
@@ -121,90 +119,91 @@ def health_check():
     except Exception as e:
         return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
 
-@app.route('/predict', methods=['POST'])
+@app.route('/predict', methods=['POST', 'GET'])
 def predict():
-    """Plant prediction endpoint"""
+    """Plant prediction endpoint with enhanced logging"""
     image_path = None
+    if request.method == 'GET':
+        logger.info("GET request received. Returning welcome message.")
+        return jsonify({'message': 'Welcome to the Plant Prediction API! Use POST to make predictions.'}), 200
     try:
-        data = request.get_json()
-        if not data or 'image_url' not in data or 'type' not in data:
-            return jsonify({'error': 'Parameters "image_url" and "type" are required'}), 400
-        
-        img_url = data.get('image_url')
-        detection_type = data.get('type').lower()
-        
+        logger.info("Received a prediction request.")
+        if 'image' in request.files:
+            image_file = request.files['image']
+            detection_type = request.form.get('type', 'leaf').lower()
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.jpg') as tmp_file:
+                image_file.save(tmp_file.name)
+                image_path = tmp_file.name
+        else:
+            data = request.get_json()
+            if not data or 'image_url' not in data or 'type' not in data:
+                return jsonify({'error': 'Parameters "image_url" and "type" are required for JSON requests'}), 400
+            
+            img_url = data.get('image_url')
+            detection_type = data.get('type').lower()
+            image_path = download_image(img_url)
+
         if detection_type not in MODEL_CONFIGS:
             return jsonify({'error': f'Invalid type. Use one of: {list(MODEL_CONFIGS.keys())}'}), 400
         
-        # Get model configuration
         config = MODEL_CONFIGS[detection_type]
-        model_names = config['models']
-        class_names = config['class_names']
-        weights = config['weights']
-        preprocess_funcs = config['preprocess_funcs']
+        model_names, class_names, weights, preprocess_funcs = config['models'], config['class_names'], config['weights'], config['preprocess_funcs']
         
-        # Check if any models are loaded
         available_models = [name for name in model_names if models.get(name) is not None]
         if not available_models:
             return jsonify({'error': f'{detection_type.title()} models not available'}), 503
         
-        # Download image
-        image_path = download_image(img_url)
-        
         predictions = []
         model_results = {}
         
-        # Make predictions with available models
         with model_lock:
             for i, model_name in enumerate(model_names):
                 if models.get(model_name) is not None:
                     try:
-                        # Preprocess image for this specific model
                         processed_image = preprocess_image_for_model(image_path, preprocess_funcs[i])
                         pred = models[model_name].predict(processed_image, verbose=0)
                         predictions.append(pred[0])
-                        model_results[model_name] = pred[0].tolist()
+                        # ✨ FIX: Store detailed results for each model in the format the UI expects.
+                        model_results[model_name] = {
+                            "model": model_name,
+                            "class_names": class_names,
+                            "probabilities": pred[0].tolist()
+                        }
                     except Exception as e:
                         logger.error(f"Error predicting with {model_name}: {str(e)}")
         
         if not predictions:
-            return jsonify({'error': 'No models available for prediction'}), 503
+            return jsonify({'error': 'Prediction failed for all models'}), 503
         
-        # Ensemble predictions (weighted average)
-        if len(predictions) == len(weights):
-            combined_probabilities = np.average(predictions, axis=0, weights=weights)
-        else:
-            combined_probabilities = np.mean(predictions, axis=0)
+        combined_probabilities = np.average(predictions, axis=0, weights=weights) if len(predictions) == len(weights) else np.mean(predictions, axis=0)
         
-        # Get final prediction
         predicted_class_index = np.argmax(combined_probabilities)
         predicted_class_name = class_names[predicted_class_index]
         confidence_level = float(combined_probabilities[predicted_class_index])
         
-        # Prepare response
+        # ✨ FIX: Build the final response with the detailed 'predictions' map and a 'summary'.
         response = {
             'type': detection_type,
             'predicted_class': predicted_class_name,
             'confidence_level': confidence_level,
-            'class_probabilities': {
-                name: float(prob) for name, prob in zip(class_names, combined_probabilities)
-            },
+            'summary': f"The ensemble model predicts '{predicted_class_name}' with a confidence of {confidence_level:.2%}.",
+            'predictions': model_results, # This now contains the detailed breakdown for the UI
             'models_used': available_models
         }
         
+        logger.info(f"Prediction successful: {predicted_class_name} with confidence {confidence_level:.2f}")
         return jsonify(response), 200
         
     except Exception as e:
-        logger.error(f"Prediction error: {str(e)}")
-        return jsonify({'error': str(e)}), 500
+        logger.error(f"An unexpected error occurred in /predict: {str(e)}")
+        return jsonify({'error': 'An internal server error occurred.'}), 500
     
     finally:
-        # Clean up temporary file
-        if image_path:
+        if image_path and os.path.exists(image_path):
             try:
                 os.unlink(image_path)
-            except:
-                pass
+            except Exception as e:
+                logger.error(f"Error cleaning up temporary file: {e}")
 
 # Initialize models when the module is imported
 initialize_models()
