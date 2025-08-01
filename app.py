@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 # CORS(app) # Allow all origins for local development
-CORS(app, resources={r"/predict": {"origins": "https://medicinal-plant-82aa9.web.app"}})
+CORS(app, resources={r"/predict": {"origins": ["https://medicinal-plant-82aa9.web.app", "http://localhost:*"]}})
 
 # Global variables
 models = {}
