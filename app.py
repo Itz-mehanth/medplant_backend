@@ -1,5 +1,6 @@
 import os
 import base64
+import glob
 import io
 import logging
 import threading
@@ -36,6 +37,20 @@ CLASSIFIER_CLASS_NAMES = {
     'flower': ['Hibiscus', 'Rose'],
     'fruit': ['Apple', 'Lemon', 'Mango', 'Papaya', 'Tomato']
 }
+
+@app.route('/debug/models', methods=['GET'])
+def debug_models():
+    """Debug endpoint to check model files"""
+    model_info = {
+        'current_directory': os.getcwd(),
+        'binary_dir_exists': os.path.exists('models/binary'),
+        'classifiers_dir_exists': os.path.exists('models/classifiers'),
+        'binary_files': glob.glob('models/binary/*') if os.path.exists('models/binary') else [],
+        'classifier_files': glob.glob('models/classifiers/*') if os.path.exists('models/classifiers') else [],
+        'all_model_files': glob.glob('models/**/*', recursive=True) if os.path.exists('models') else [],
+        'root_contents': os.listdir('.') if os.path.exists('.') else []
+    }
+    return jsonify(model_info)
 
 # --- Model Loading ---
 def load_all_models():
