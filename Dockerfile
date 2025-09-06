@@ -36,6 +36,9 @@ RUN mkdir -p models/binary models/classifiers
 COPY app.py .
 COPY docker-entrypoint.sh .
 
+COPY models/binary/* models/binary/
+COPY models/classifiers/* models/classifiers/
+
 # Set permissions for entrypoint
 RUN chmod +x docker-entrypoint.sh
 
