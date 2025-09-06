@@ -30,7 +30,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Create necessary directories
-RUN mkdir -p models
+RUN mkdir -p models/binary models/classifiers
 
 # Copy application files
 COPY app.py .
